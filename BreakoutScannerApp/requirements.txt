@@ -1,4 +1,4 @@
-PyQt5==5.15.11
+PyQt5>=5.15.9,<6
 yfinance>=0.2.40
 pandas>=2.0
 openpyxl>=3.1
