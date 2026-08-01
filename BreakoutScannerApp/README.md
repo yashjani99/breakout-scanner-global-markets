@@ -47,30 +47,24 @@ logic, table, and exports all work off that registry automatically.
 |---|---|
 | `breakout_scanner_app.py` | The application (PyQt5) |
 | `requirements.txt` | Runtime dependencies |
-| `setup_freeze.py` | Unified `cx_Freeze` script — MSI (Windows), RPM (Linux), DMG (macOS) |
+| `setup_freeze.py` | `cx_Freeze` script that builds the Windows MSI |
 | `build_installer.bat` | Windows: installs deps, builds standalone EXE + MSI |
-| `build_rpm.sh` | Linux (Fedora/RHEL/openSUSE, needs `rpmbuild`): builds `.rpm` |
-| `build_deb.sh` | Linux (Debian/Ubuntu, needs `dpkg-deb`): builds `.deb` |
-| `build_mac.sh` | macOS: builds `.app` + `.dmg` |
 
-## Building — one native package per OS
+## Building (Windows only)
 
-Native installers can only be built on the OS they target (you cannot produce a `.deb` on
-Windows, an `.msi` on Linux, etc.) — the packaging tools themselves are OS-specific and the
-frozen bundle includes OS-specific binaries. Run the matching script **on that OS**:
+Requires Python 3.10–3.12 (64-bit) from python.org (not the Microsoft Store version). Then:
 
-| Target | Run this on that OS | Output |
-|---|---|---|
-| Windows | `build_installer.bat` | `dist\BreakoutScannerIndianMarket.exe` + `dist\*.msi` |
-| Fedora/RHEL/openSUSE | `./build_rpm.sh` | `dist/*.rpm` |
-| Debian/Ubuntu | `./build_deb.sh` | `dist/breakout-scanner-indian-market_2.0.1_amd64.deb` |
-| macOS | `./build_mac.sh` | `dist/*.dmg` |
+```
+build_installer.bat
+```
 
-All four require Python 3.10–3.12 (64-bit) already installed on the build machine — on Windows
-use the official installer from python.org (not the Microsoft Store version). Every package is
-fully self-contained: `cx_Freeze`/`PyInstaller` bundle the Python runtime and every dependency
-(PyQt5, pandas, yfinance, reportlab, openpyxl) into the installed app, so **end users install
-nothing extra** on any of the three OSes.
+This installs the runtime dependencies plus the build tools (`cx_Freeze`, `pyinstaller`) and
+produces:
+- `dist\BreakoutScannerIndianMarket.exe` — standalone one-file EXE, no install needed
+- `dist\*.msi` — installer that puts the app in Program Files with Desktop + Start Menu shortcuts
+
+Both are fully self-contained: the Python runtime and every dependency (PyQt5, pandas, yfinance,
+reportlab, openpyxl) are bundled in, so end users install nothing extra.
 
 ## Running from source (no build)
 
@@ -85,7 +79,3 @@ python breakout_scanner_app.py
   network speed and Yahoo's rate limiting; the progress bar tracks this.
 - To change the upgrade behavior of future MSI releases, keep `UPGRADE_CODE` in
   `setup_freeze.py` fixed across versions and just bump `VERSION`.
-- Only the Windows path (EXE + MSI) has actually been built and smoke-tested so far, since
-  this project was built on a Windows machine. The RPM/DEB/DMG scripts follow the same proven
-  `cx_Freeze` approach as the working MSI build, but should be run once on their target OS to
-  confirm before distributing.
