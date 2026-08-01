@@ -1,0 +1,17 @@
+# Build artifacts (regenerated fresh by CI / build scripts)
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+*.spec
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS cruft
+Thumbs.db
+.DS_Store
+
+# Local Claude Code tool config (session-specific, not project source)
+.claude/
