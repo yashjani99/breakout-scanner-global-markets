@@ -21,7 +21,7 @@ Output lands in build/ and dist/.
 import sys
 from cx_Freeze import setup, Executable
 
-APP_NAME = "BreakoutScannerIndianMarket"
+APP_NAME = "BreakoutScannerGlobalMarkets"
 APP_TITLE = "Breakout Scanner Global Markets"
 VERSION = "2.0.1"
 AUTHOR = "Yash Jani"
@@ -74,9 +74,17 @@ bdist_rpm_options = {
     "group": "Applications/Productivity",
     "vendor": AUTHOR,
     "packager": AUTHOR,
-    # No "requires" set: everything is bundled by cx_Freeze, no external RPM
-    # deps needed. An empty list here produces a blank "Requires:" tag that
-    # rpm's spec parser rejects ("Empty tag"), so the key is just omitted.
+    # cx_Freeze bundles Python and dependencies. Only require minimal system libs for Qt5 GUI.
+    "requires": [
+        "libxcb >= 1.11",
+        "libxkbcommon >= 0.5",
+        "libxkbcommon-x11 >= 0.5",
+        "dbus-libs >= 1.8",
+        "mesa-libGL >= 18.0",
+        "mesa-libEGL >= 18.0",
+    ],
+    "provides": ["breakout-scanner"],
+    "conflicts": "BreakoutScannerIndianMarket",
 }
 
 # --- macOS .app / .dmg -----------------------------------------------------

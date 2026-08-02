@@ -30,7 +30,7 @@ if errorlevel 1 goto :error
 
 echo.
 echo [3/4] Building standalone EXE with PyInstaller...
-python -m PyInstaller --onefile --windowed --name BreakoutScannerIndianMarket ^
+python -m PyInstaller --onefile --windowed --name BreakoutScannerGlobalMarkets ^
     --hidden-import=yfinance --hidden-import=pandas --hidden-import=pytz ^
     --hidden-import=requests --hidden-import=reportlab breakout_scanner_app.py
 if errorlevel 1 goto :error
@@ -43,7 +43,7 @@ if errorlevel 1 goto :error
 echo.
 echo ============================================================
 echo   BUILD COMPLETE
-echo   - Standalone EXE : dist\BreakoutScannerIndianMarket.exe
+echo   - Standalone EXE : dist\BreakoutScannerGlobalMarkets.exe
 echo   - MSI Installer  : dist\*.msi
 echo ============================================================
 pause

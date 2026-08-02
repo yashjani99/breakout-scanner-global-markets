@@ -58,10 +58,10 @@ cp -r "$FROZEN_DIR"/* "$INSTALL_DIR"/
 mkdir -p "$STAGE/usr/bin"
 cat > "$STAGE/usr/bin/${APP_NAME}" <<EOF
 #!/bin/sh
-exec /opt/${APP_NAME}/BreakoutScannerIndianMarket "\$@"
+exec /opt/${APP_NAME}/BreakoutScannerGlobalMarkets "\$@"
 EOF
 chmod +x "$STAGE/usr/bin/${APP_NAME}"
-chmod +x "$INSTALL_DIR/BreakoutScannerIndianMarket"
+chmod +x "$INSTALL_DIR/BreakoutScannerGlobalMarkets"
 
 mkdir -p "$STAGE/usr/share/applications"
 cat > "$STAGE/usr/share/applications/${APP_NAME}.desktop" <<EOF
