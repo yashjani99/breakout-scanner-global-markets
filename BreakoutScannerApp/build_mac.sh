@@ -29,6 +29,18 @@ echo
 echo "[3/3] Building .app and .dmg..."
 python3 setup_freeze.py bdist_dmg
 
+# cx_Freeze's bdist_dmg stages everything under build/dist/... rather than
+# the top-level dist/ that bdist_msi and bdist_rpm use, so locate whatever
+# .dmg it produced and copy it into dist/ ourselves.
+mkdir -p dist
+DMG_FILE=$(find build -iname "*.dmg" | head -n1)
+if [ -z "$DMG_FILE" ]; then
+    echo "ERROR: bdist_dmg reported success but no .dmg file was found under build/"
+    exit 1
+fi
+cp "$DMG_FILE" dist/
+echo "Copied: $DMG_FILE -> dist/$(basename "$DMG_FILE")"
+
 echo
 echo "============================================================"
 echo "  BUILD COMPLETE - see dist/*.dmg"
