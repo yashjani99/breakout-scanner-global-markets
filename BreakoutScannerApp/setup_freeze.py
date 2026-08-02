@@ -37,6 +37,10 @@ build_exe_options = {
     ],
     "excludes": ["tkinter", "test", "unittest"],
     "include_msvcr": True,
+    # PyQt5's bundled Qt5 ships a PostgreSQL SQL-driver plugin linked against a
+    # Homebrew libpq path from Riverbank's build machine that won't exist on
+    # other systems. We never use QtSql, so just skip resolving/copying it.
+    "bin_excludes": ["libpq.5.dylib"],
 }
 
 # --- Windows MSI -----------------------------------------------------------
@@ -68,7 +72,6 @@ bdist_msi_options = {
 bdist_rpm_options = {
     "release": "1",
     "group": "Applications/Productivity",
-    "license": "Proprietary",
     "vendor": AUTHOR,
     "packager": AUTHOR,
     "requires": [],  # everything is bundled by cx_Freeze, no external RPM deps needed
@@ -98,6 +101,7 @@ setup(
     version=VERSION,
     description=DESCRIPTION,
     author=AUTHOR,
+    license="Proprietary",
     options={
         "build_exe": build_exe_options,
         "bdist_msi": bdist_msi_options,
