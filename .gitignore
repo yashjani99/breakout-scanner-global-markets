@@ -15,3 +15,6 @@ Thumbs.db
 
 # Local Claude Code tool config (session-specific, not project source)
 .claude/
+
+# Separate repo, deployed independently - not part of this repo's history
+breakout-scanner-website/

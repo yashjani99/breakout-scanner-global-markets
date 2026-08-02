@@ -47,10 +47,19 @@ logic, table, and exports all work off that registry automatically.
 |---|---|
 | `breakout_scanner_app.py` | The application (PyQt5) |
 | `requirements.txt` | Runtime dependencies |
-| `setup_freeze.py` | `cx_Freeze` script that builds the Windows MSI |
+| `setup_freeze.py` | Unified `cx_Freeze` script — MSI (Windows), RPM (Linux), DMG (macOS) |
 | `build_installer.bat` | Windows: installs deps, builds standalone EXE + MSI |
+| `build_rpm.sh` | Linux (Fedora/RHEL/openSUSE, needs `rpmbuild`): builds `.rpm` |
+| `build_deb.sh` | Linux (Debian/Ubuntu, needs `dpkg-deb`): builds `.deb` |
+| `build_mac.sh` | macOS: builds `.app` + `.dmg` |
 
-## Building (Windows only)
+## Building
+
+Every platform's installer is fully self-contained: `cx_Freeze`/`PyInstaller` bundle the Python
+runtime and every dependency (PyQt5, pandas, yfinance, reportlab, openpyxl) into the app, so end
+users install nothing extra.
+
+### Windows
 
 Requires Python 3.10–3.12 (64-bit) from python.org (not the Microsoft Store version). Then:
 
@@ -58,13 +67,25 @@ Requires Python 3.10–3.12 (64-bit) from python.org (not the Microsoft Store ve
 build_installer.bat
 ```
 
-This installs the runtime dependencies plus the build tools (`cx_Freeze`, `pyinstaller`) and
-produces:
-- `dist\BreakoutScannerIndianMarket.exe` — standalone one-file EXE, no install needed
-- `dist\*.msi` — installer that puts the app in Program Files with Desktop + Start Menu shortcuts
+Produces `dist\BreakoutScannerIndianMarket.exe` (standalone) and `dist\*.msi`. This x64 build
+also runs on ARM64 Windows 11 machines via Microsoft's built-in x64 emulation — PyQt5 has no
+ARM64 Windows wheels, so a native ARM64 build isn't currently possible, but emulation covers it.
 
-Both are fully self-contained: the Python runtime and every dependency (PyQt5, pandas, yfinance,
-reportlab, openpyxl) are bundled in, so end users install nothing extra.
+### Linux / macOS
+
+Native installers can only be built on the OS they target. Run the matching script on that OS:
+
+```
+./build_rpm.sh   # Fedora/RHEL/openSUSE -> dist/*.rpm
+./build_deb.sh   # Debian/Ubuntu        -> dist/*.deb
+./build_mac.sh   # macOS                -> dist/*.dmg
+```
+
+### CI (all four at once)
+
+`.github/workflows/build-installers.yml` runs all of the above on real Windows, Linux and macOS
+GitHub-hosted runners on every push to `main` that touches this folder (or via manual dispatch),
+and uploads each installer as a workflow artifact.
 
 ## Running from source (no build)
 
