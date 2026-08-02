@@ -74,7 +74,9 @@ bdist_rpm_options = {
     "group": "Applications/Productivity",
     "vendor": AUTHOR,
     "packager": AUTHOR,
-    "requires": [],  # everything is bundled by cx_Freeze, no external RPM deps needed
+    # No "requires" set: everything is bundled by cx_Freeze, no external RPM
+    # deps needed. An empty list here produces a blank "Requires:" tag that
+    # rpm's spec parser rejects ("Empty tag"), so the key is just omitted.
 }
 
 # --- macOS .app / .dmg -----------------------------------------------------
