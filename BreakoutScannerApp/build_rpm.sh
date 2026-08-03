@@ -3,89 +3,98 @@ set -e
 cd "$(dirname "$0")"
 
 echo "============================================================"
-echo "  Breakout Scanner Global Markets - Linux RPM Build"
+echo "  Breakout Scanner Global Markets - RPM Build"
 echo "============================================================"
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "python3 not found. Install it first."
-    exit 1
-fi
+# Check prerequisites
+command -v python3 >/dev/null || { echo "python3 required"; exit 1; }
+command -v rpmbuild >/dev/null || { echo "rpmbuild required"; exit 1; }
 
-if ! command -v rpmbuild >/dev/null 2>&1; then
-    echo "rpmbuild not found. Install it first:"
-    echo "  Fedora/RHEL   : sudo dnf install rpm-build"
-    exit 1
-fi
+echo "[1/3] Installing dependencies..."
+python3 -m pip install --upgrade pip >/dev/null 2>&1
+python3 -m pip install -r requirements.txt >/dev/null 2>&1
+python3 -m pip install cx_Freeze >/dev/null 2>&1
 
-echo
-echo "[1/4] Installing dependencies..."
-python3 -m pip install --upgrade pip 2>&1 | grep -v "already satisfied"
-python3 -m pip install -r requirements.txt 2>&1 | grep -v "already satisfied"
-python3 -m pip install cx_Freeze 2>&1 | grep -v "already satisfied"
+echo "[2/3] Building executable with cx_Freeze..."
+python3 -m PyInstaller --onefile --windowed \
+  --name BreakoutScannerGlobalMarkets \
+  --hidden-import=yfinance --hidden-import=pandas \
+  --hidden-import=pytz --hidden-import=requests \
+  breakout_scanner_app.py
 
-echo
-echo "[2/4] Building with cx_Freeze..."
-python3 setup_freeze.py bdist_rpm
+echo "[3/3] Creating RPM..."
+mkdir -p rpmbuild/{SPECS,SOURCES,RPMS}
 
-echo
-echo "[3/4] Fixing RPM spec to exclude bundled libraries..."
-# Find the generated spec file
-SPEC_FILE=$(find build -name "*.spec" -type f 2>/dev/null | head -1)
+# Create clean spec file
+cat > rpmbuild/SPECS/breakout-scanner.spec << 'EOFSPEC'
+Name: BreakoutScannerGlobalMarkets
+Version: 2.0.1
+Release: 1
+Summary: Breakout Scanner - Multi-market stock scanner
+License: Proprietary
+URL: https://github.com/yashjani99/breakout-scanner-global-markets
 
-if [ -z "$SPEC_FILE" ]; then
-    echo "ERROR: Could not find generated .spec file"
-    exit 1
-fi
+%description
+Professional stock breakout scanner for NSE, TSX, NYSE, LSE markets.
+Bundles Python runtime and all dependencies. No installation required.
 
-echo "  Spec file: $SPEC_FILE"
+Requires: libxcb >= 1.11, libxkbcommon >= 0.5, libxkbcommon-x11 >= 0.5
+Requires: dbus-libs >= 1.8, mesa-libGL >= 18.0, mesa-libEGL >= 18.0
 
-# Create a backup
-cp "$SPEC_FILE" "${SPEC_FILE}.bak"
-
-# Remove the old spec file from dist if it exists
-rm -f dist/*.spec 2>/dev/null || true
-
-# Add the critical exclude directives at the beginning of %prep or %build section
-python3 << 'EOFPYTHON'
-import re
-
-spec_file = """SPEC_FILE"""
-
-with open(spec_file, 'r') as f:
-    content = f.read()
-
-# Add the exclude directives after Name/Version/Release and before %description
-exclude_directives = '''# Exclude bundled libraries from dependency scanning
 %global __requires_exclude_from ^/opt/.*\.so.*$
-%global __requires_exclude libQt5|libcrypto|libssl|libjpeg|libpng|libtiff|libgfortran|liblzma|libquadmath|libuuid
-'''
+%global __requires_exclude libQt5|libcrypto|libssl|libjpeg|libpng|libtiff
 
-# Insert after the Release line
-pattern = r'(Release:\s+\d+)'
-replacement = r'\1\n' + exclude_directives
-content = re.sub(pattern, replacement, content)
+%prep
+%setup -q -n BreakoutScannerGlobalMarkets
 
-with open(spec_file, 'w') as f:
-    f.write(content)
+%build
 
-print("✓ Added bundled library excludes to spec")
-EOFPYTHON
+%install
+mkdir -p %{buildroot}/opt/BreakoutScannerGlobalMarkets
+mkdir -p %{buildroot}/usr/bin
+mkdir -p %{buildroot}/usr/share/applications
+mkdir -p %{buildroot}/usr/share/pixmaps
 
-echo "  ✓ Spec file patched successfully"
+cp -r dist/BreakoutScannerGlobalMarkets/* %{buildroot}/opt/BreakoutScannerGlobalMarkets/
+chmod +x %{buildroot}/opt/BreakoutScannerGlobalMarkets/BreakoutScannerGlobalMarkets
 
-echo
-echo "[4/4] Rebuilding RPM with fixed spec..."
-cd build
-rpmbuild -bb "${SPEC_FILE#*/build/}" --define "_rpmdir $(pwd)/dist" 2>&1 | tail -5
+cat > %{buildroot}/usr/bin/BreakoutScannerGlobalMarkets << 'EOF'
+#!/bin/bash
+exec /opt/BreakoutScannerGlobalMarkets/BreakoutScannerGlobalMarkets "$@"
+EOF
+chmod +x %{buildroot}/usr/bin/BreakoutScannerGlobalMarkets
+
+%files
+/opt/BreakoutScannerGlobalMarkets/
+/usr/bin/BreakoutScannerGlobalMarkets
+
+%post
+chmod +x /usr/bin/BreakoutScannerGlobalMarkets
+
+%postun
+rm -rf /opt/BreakoutScannerGlobalMarkets 2>/dev/null || true
+
+%changelog
+* Fri Aug 02 2026 Yash Jani <yash@example.com> - 2.0.1-1
+- Fix RPM dependency scanning for bundled libraries
+EOFSPEC
+
+# Copy dist to rpmbuild
+cp -r dist rpmbuild/SOURCES/BreakoutScannerGlobalMarkets-2.0.1
+
+# Build RPM
+cd rpmbuild
+rpmbuild -bb SPECS/breakout-scanner.spec \
+  --define "_topdir $(pwd)" \
+  --define "_builddir $(pwd)/SOURCES" \
+  2>&1 | tail -20
+
 cd ..
-
-# Move RPM to dist folder
 mkdir -p dist
-find build/dist -name "*.rpm" -type f -exec mv {} dist/ \; 2>/dev/null || true
+mv rpmbuild/RPMS/x86_64/*.rpm dist/ 2>/dev/null || true
 
-echo
 echo "============================================================"
-echo "  BUILD COMPLETE"
-ls -lh dist/*.rpm 2>/dev/null | awk '{print "  ✓", $9, "(" $5 ")"}'
+echo "  Build Complete"
+ls -lh dist/*.rpm 2>/dev/null || echo "  ✗ No RPM generated - check errors above"
 echo "============================================================"
 
