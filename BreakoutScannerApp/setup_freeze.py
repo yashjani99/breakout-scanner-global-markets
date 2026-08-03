@@ -74,6 +74,7 @@ bdist_rpm_options = {
     "group": "Applications/Productivity",
     "vendor": AUTHOR,
     "packager": AUTHOR,
+    "spec_file": "spec_template.spec",
     # cx_Freeze bundles Python and dependencies. Only require minimal system libs for Qt5 GUI.
     "requires": [
         "libxcb >= 1.11",
