@@ -65,11 +65,23 @@ install -m 755 /dev/stdin %{buildroot}/usr/bin/BreakoutScannerGlobalMarkets << '
 #!/bin/bash
 exec /opt/BreakoutScannerGlobalMarkets/BreakoutScannerGlobalMarkets "$@"
 WRAPPER
+mkdir -p %{buildroot}/usr/share/applications
+install -m 644 /dev/stdin %{buildroot}/usr/share/applications/breakout-scanner.desktop << 'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Breakout Scanner Global Markets
+Comment=Professional stock breakout scanner for global markets
+Exec=/usr/bin/BreakoutScannerGlobalMarkets
+Icon=application-x-executable
+Categories=Office;Finance;Utility;
+Terminal=false
+DESKTOP
 
 %files
 %defattr(-,root,root,-)
 /opt/BreakoutScannerGlobalMarkets
 /usr/bin/BreakoutScannerGlobalMarkets
+/usr/share/applications/breakout-scanner.desktop
 
 %changelog
 * Mon Aug 02 2024 Yash Jani <yashjani.ca@gmail.com>
