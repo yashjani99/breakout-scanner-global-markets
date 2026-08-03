@@ -66,7 +66,7 @@ install -m 755 /dev/stdin %{buildroot}/usr/bin/BreakoutScannerGlobalMarkets << '
 exec /opt/BreakoutScannerGlobalMarkets/BreakoutScannerGlobalMarkets "$@"
 WRAPPER
 mkdir -p %{buildroot}/usr/share/applications
-install -m 644 /dev/stdin %{buildroot}/usr/share/applications/breakout-scanner.desktop << 'DESKTOP'
+cat > %{buildroot}/usr/share/applications/breakout-scanner.desktop << 'ENDDESKTOP'
 [Desktop Entry]
 Type=Application
 Name=Breakout Scanner Global Markets
@@ -75,7 +75,8 @@ Exec=/usr/bin/BreakoutScannerGlobalMarkets
 Icon=application-x-executable
 Categories=Office;Finance;Utility;
 Terminal=false
-DESKTOP
+ENDDESKTOP
+chmod 644 %{buildroot}/usr/share/applications/breakout-scanner.desktop
 
 %files
 %defattr(-,root,root,-)
