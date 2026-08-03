@@ -14,33 +14,78 @@ fi
 if ! command -v rpmbuild >/dev/null 2>&1; then
     echo "rpmbuild not found. Install it first:"
     echo "  Fedora/RHEL   : sudo dnf install rpm-build"
-    echo "  openSUSE      : sudo zypper install rpm-build"
     exit 1
 fi
 
 echo
-echo "[1/3] Installing runtime dependencies..."
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+echo "[1/4] Installing dependencies..."
+python3 -m pip install --upgrade pip 2>&1 | grep -v "already satisfied"
+python3 -m pip install -r requirements.txt 2>&1 | grep -v "already satisfied"
+python3 -m pip install cx_Freeze 2>&1 | grep -v "already satisfied"
 
 echo
-echo "[2/3] Installing cx_Freeze..."
-python3 -m pip install cx_Freeze
-
-echo
-echo "[3/3] Building RPM package..."
+echo "[2/4] Building with cx_Freeze..."
 python3 setup_freeze.py bdist_rpm
 
 echo
-echo "[4/4] Fixing spec file to exclude bundled library dependencies..."
-SPEC_FILE=$(find dist -name "*.spec" -type f | head -1)
-if [ -n "$SPEC_FILE" ]; then
-    # Add directive to NOT scan bundled libraries for dependencies
-    sed -i '/^%files/i %global __requires_exclude_from ^/opt/.*\.so.*$\n%global __requires_exclude libQt5Bodymovin|libcrypto|libssl|libjpeg|libpng|libtiff|libgfortran|liblzma|libquadmath|libuuid' "$SPEC_FILE"
-    echo "  ✓ Spec file updated to exclude bundled libraries"
+echo "[3/4] Fixing RPM spec to exclude bundled libraries..."
+# Find the generated spec file
+SPEC_FILE=$(find build -name "*.spec" -type f 2>/dev/null | head -1)
+
+if [ -z "$SPEC_FILE" ]; then
+    echo "ERROR: Could not find generated .spec file"
+    exit 1
 fi
+
+echo "  Spec file: $SPEC_FILE"
+
+# Create a backup
+cp "$SPEC_FILE" "${SPEC_FILE}.bak"
+
+# Remove the old spec file from dist if it exists
+rm -f dist/*.spec 2>/dev/null || true
+
+# Add the critical exclude directives at the beginning of %prep or %build section
+python3 << 'EOFPYTHON'
+import re
+
+spec_file = """SPEC_FILE"""
+
+with open(spec_file, 'r') as f:
+    content = f.read()
+
+# Add the exclude directives after Name/Version/Release and before %description
+exclude_directives = '''# Exclude bundled libraries from dependency scanning
+%global __requires_exclude_from ^/opt/.*\.so.*$
+%global __requires_exclude libQt5|libcrypto|libssl|libjpeg|libpng|libtiff|libgfortran|liblzma|libquadmath|libuuid
+'''
+
+# Insert after the Release line
+pattern = r'(Release:\s+\d+)'
+replacement = r'\1\n' + exclude_directives
+content = re.sub(pattern, replacement, content)
+
+with open(spec_file, 'w') as f:
+    f.write(content)
+
+print("✓ Added bundled library excludes to spec")
+EOFPYTHON
+
+echo "  ✓ Spec file patched successfully"
+
+echo
+echo "[4/4] Rebuilding RPM with fixed spec..."
+cd build
+rpmbuild -bb "${SPEC_FILE#*/build/}" --define "_rpmdir $(pwd)/dist" 2>&1 | tail -5
+cd ..
+
+# Move RPM to dist folder
+mkdir -p dist
+find build/dist -name "*.rpm" -type f -exec mv {} dist/ \; 2>/dev/null || true
 
 echo
 echo "============================================================"
-echo "  BUILD COMPLETE - see dist/*.rpm"
+echo "  BUILD COMPLETE"
+ls -lh dist/*.rpm 2>/dev/null | awk '{print "  ✓", $9, "(" $5 ")"}'
 echo "============================================================"
+
