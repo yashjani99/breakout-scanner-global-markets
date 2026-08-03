@@ -92,3 +92,44 @@ jobs:
         with:
           name: macos-installer
           path: BreakoutScannerApp/dist/*.dmg
+
+  release:
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find artifacts -type f -name "*.exe" -o -name "*.msi" -o -name "*.rpm" -o -name "*.deb" -o -name "*.dmg" | while read file; do
+            cp "$file" release/
+          done
+          ls -lh release/
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/*
+          tag_name: v${{ env.APP_VERSION }}
+          name: Release v${{ env.APP_VERSION }}
+          body: |
+            Professional stock breakout scanner with global market support.
+            
+            **Includes:**
+            - Windows MSI Installer & Portable EXE
+            - Linux .deb (Debian/Ubuntu)
+            - Linux .rpm (Fedora/RHEL)
+            - macOS .dmg
+            
+            All installers bundle Python and dependencies - no installation required.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: "2.0.1"
