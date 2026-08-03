@@ -17,24 +17,18 @@ python3 -m pip install cx_Freeze
 echo "[2/3] Building RPM with cx_Freeze..."
 python3 setup_freeze.py bdist_rpm
 
-echo "[3/3] Fixing spec file to exclude bundled libraries..."
+echo "[3/3] Patching spec to exclude bundled libraries..."
 SPEC_FILE=$(find build -name "*.spec" -type f 2>/dev/null | head -1)
+
 if [ -n "$SPEC_FILE" ]; then
-    python3 << 'EOFPYTHON'
-import re
-spec_file = """$SPEC_FILE"""
-with open(spec_file, 'r') as f:
-    content = f.read()
-
-# Add exclude directives after Release line
-pattern = r'(Release:\s+\d+)'
-exclude = '\n%global __requires_exclude_from ^/opt/.*\\.so.*$\n%global __requires_exclude libQt5|libcrypto|libssl|libjpeg|libpng|libtiff|libgfortran|liblzma|libquadmath'
-content = re.sub(pattern, r'\1' + exclude, content)
-
-with open(spec_file, 'w') as f:
-    f.write(content)
-print("✓ Spec patched")
-EOFPYTHON
+    # Insert %global directives right after Release line using sed
+    sed -i '/^Release:/a %global __requires_exclude_from ^/opt/.*\\.so.*$\n%global __requires_exclude libQt5|libcrypto|libssl|libjpeg|libpng|libtiff|libgfortran|liblzma|libquadmath|libuuid|libreadline|libsqlite3|libwebp|libzstd|libXau|libfreetype|libbrotli|libbz2|libffi|libharfbuzz|libicu|liblcms2|libopenjp2|libpq|libasound|libpulse|libdrm|libdbus|libwayland|libxkbcommon|libxcb' "$SPEC_FILE"
+    
+    # Rebuild RPM with patched spec
+    echo "  Rebuilding with patched spec..."
+    rpmbuild -bb "$SPEC_FILE" \
+      --define "_topdir $(dirname $SPEC_FILE)/.." \
+      --define "_builddir $(dirname $SPEC_FILE)/../../BUILD" 2>&1 | tail -10
 fi
 
 mkdir -p dist
