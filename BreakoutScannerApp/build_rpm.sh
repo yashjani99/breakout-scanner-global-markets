@@ -49,7 +49,7 @@ echo "  ✓ Spec: minimal system requires added"
 echo "[4/4] Building RPM..."
 RPM_DIR=$(dirname "$SPEC_FILE")
 cd "$RPM_DIR"
-rpmbuild -bb --define="_topdir $(pwd)" --noprov "$(basename $SPEC_FILE)" 2>&1 | tail -3
+rpmbuild -bb --define="_topdir $(pwd)" "$(basename $SPEC_FILE)" 2>&1 | tail -3
 cd ../..
 
 # Move RPM to dist
