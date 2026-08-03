@@ -29,7 +29,7 @@ jobs:
 
       - name: Build standalone EXE (PyInstaller)
         run: >
-          python -m PyInstaller --onefile --windowed --name BreakoutScannerIndianMarket
+          python -m PyInstaller --onefile --windowed --name BreakoutScannerGlobalMarkets
           --hidden-import=yfinance --hidden-import=pandas --hidden-import=pytz
           --hidden-import=requests --hidden-import=reportlab breakout_scanner_app.py
 
@@ -114,22 +114,31 @@ jobs:
           done
           ls -lh release/
       
+      - name: Delete existing release if it exists
+        run: |
+          TAG="v2.0.1"
+          # Try to delete the release
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          # Try to delete the tag
+          git push origin --delete "$TAG" 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: release/*
-          tag_name: v${{ env.APP_VERSION }}
-          name: Release v${{ env.APP_VERSION }}
+          tag_name: v2.0.1
+          name: Release v2.0.1
           body: |
             Professional stock breakout scanner with global market support.
-            
+
             **Includes:**
             - Windows MSI Installer & Portable EXE
             - Linux .deb (Debian/Ubuntu)
             - Linux .rpm (Fedora/RHEL)
             - macOS .dmg
-            
+
             All installers bundle Python and dependencies - no installation required.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APP_VERSION: "2.0.1"
