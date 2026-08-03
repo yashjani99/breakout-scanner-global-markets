@@ -6,90 +6,63 @@ echo "============================================================"
 echo "  Breakout Scanner Global Markets - RPM Build"
 echo "============================================================"
 
-command -v python3 >/dev/null || { echo "python3 required"; exit 1; }
-command -v rpmbuild >/dev/null || { echo "rpmbuild required"; exit 1; }
-
-echo "[1/4] Installing build dependencies..."
+# Install build deps
+echo "[1/4] Installing dependencies..."
 python3 -m pip install --upgrade pip setuptools wheel >/dev/null 2>&1
 python3 -m pip install -r requirements.txt >/dev/null 2>&1
 python3 -m pip install cx_Freeze >/dev/null 2>&1
 
-echo "[2/4] Building RPM with cx_Freeze..."
-python3 setup_freeze.py bdist_rpm 2>&1 | grep -E "writing|running|Executing|Wrote|RPM|error" | tail -20
+# Build with cx_Freeze bdist_rpm
+echo "[2/4] Building with cx_Freeze..."
+python3 setup_freeze.py bdist_rpm 2>&1 | tail -15
 
-echo "[3/4] Fixing spec file dependencies..."
+# Find the generated spec file
 SPEC_FILE=$(find build -name "*.spec" -type f 2>/dev/null | head -1)
-
-if [ -n "$SPEC_FILE" ]; then
-    cat > /tmp/fix_spec.py << 'EOFPYTH'
-import sys
-import re
-
-spec_file = sys.argv[1]
-
-with open(spec_file, 'r') as f:
-    content = f.read()
-
-# Remove all Requires: lines that contain bundled libraries
-lines = content.split('\n')
-new_lines = []
-skip_next = False
-
-bundled_libs = ['libQt5', 'libcrypto', 'libssl', 'libjpeg', 'libpng', 'libtiff', 
-                'libgfortran', 'liblzma', 'libquadmath', 'libuuid', 'libreadline', 
-                'libsqlite3', 'libwebp', 'libzstd', 'libfreetype', 'libbrotli', 
-                'libbz2', 'libffi', 'libharfbuzz', 'libicu', 'liblcms2', 'libopenjp2', 
-                'libpq', 'libasound', 'libpulse', 'libdrm', 'libdbus', 'libwayland', 
-                'libxkbcommon', 'libxcb', 'libxau']
-
-for line in lines:
-    if 'Requires:' in line and any(x in line for x in bundled_libs):
-        skip_next = line.rstrip().endswith('\\')
-        continue
-    
-    if skip_next:
-        if not line.rstrip().endswith('\\'):
-            skip_next = False
-        continue
-    
-    new_lines.append(line)
-
-content = '\n'.join(new_lines)
-
-# Add minimal requires before %files
-minimal_requires = '''# Only require actual system libraries - everything else is bundled
-Requires: libxcb >= 1.11
-Requires: libxkbcommon >= 0.5
-Requires: dbus-libs >= 1.8
-Requires: mesa-libGL >= 18.0
-Requires: mesa-libEGL >= 18.0
-'''
-
-# Insert before %files section
-if '%files' in content:
-    content = content.replace('%files', minimal_requires + '\n%files', 1)
-
-with open(spec_file, 'w') as f:
-    f.write(content)
-
-print("✓ Cleaned: removed bundled lib dependencies, added minimal requires")
-EOFPYTH
-
-    python3 /tmp/fix_spec.py "$SPEC_FILE"
+if [ -z "$SPEC_FILE" ]; then
+    echo "ERROR: No spec file found"
+    exit 1
 fi
 
-echo "[4/4] RPM ready"
+echo "[3/4] Disabling automatic requires..."
+
+# Use sed to add the directives at the very top of the spec
+# This ensures rpmbuild sees them before it scans anything
+sed -i '1i%define __find_requires %{nil}\n%define __find_provides %{nil}\nAutoReqProv: no' "$SPEC_FILE"
+
+# Remove all the bundled library requires using sed
+# Match lines starting with Requires: and containing versioned .so names or Qt5 libraries
+sed -i '/^Requires:.*\(libQt5\|libcrypto\|libssl\|libjpeg\|libpng\|libtiff\|libgfortran\|liblzma\|libquadmath\|libuuid\|\.so\|[(]64bit[)]\|[(]OPENSSL\|[(]GFORTRAN\|[(]LIBJPEG\|[(]XZ_\|[(]PNG\|[(]QUADMATH\|[(]LIBTIFF\|[(]UUID_\|[(]Qt_\)/d' "$SPEC_FILE"
+
+# Add minimal requires after the Name: field
+sed -i '/^Name:/a\
+\
+Requires: libxcb >= 1.11\
+Requires: libxkbcommon >= 0.5\
+Requires: dbus-libs >= 1.8\
+Requires: mesa-libGL >= 18.0' "$SPEC_FILE"
+
+echo "  ✓ Spec: auto requires disabled"
+echo "  ✓ Spec: bundled lib dependencies removed"
+echo "  ✓ Spec: minimal system requires added"
+
+# Rebuild using the cleaned spec
+echo "[4/4] Building RPM..."
+RPM_DIR=$(dirname "$SPEC_FILE")
+cd "$RPM_DIR"
+rpmbuild -bb --define="_topdir $(pwd)" --noprov "$(basename $SPEC_FILE)" 2>&1 | tail -3
+cd ../..
+
+# Move RPM to dist
 mkdir -p dist
-find build/bdist.*/rpm/RPMS -name "*.rpm" -type f -exec mv {} dist/ \; 2>/dev/null || true
+find build -name "*.rpm" -type f -exec mv {} dist/ \; 2>/dev/null || true
 
 echo
-echo "============================================================"
-echo "  Build Complete"
 if ls dist/*.rpm 1>/dev/null 2>&1; then
-    ls -lh dist/*.rpm | awk '{print "  ✓", $9, "(" $5 ")"}'
-    echo "  ✓ RPM ready with proper dependency handling"
+    echo "✓ RPM Build Complete:"
+    ls -lh dist/*.rpm | awk '{print "  " $9, "(" $5 ")"}'
 else
-    echo "  ✗ No RPM found - build may have failed"
+    echo "✗ No RPM found"
+    exit 1
 fi
 echo "============================================================"
 
