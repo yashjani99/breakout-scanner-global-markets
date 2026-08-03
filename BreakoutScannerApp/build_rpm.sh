@@ -61,11 +61,10 @@ for NSE, TSX, NYSE, LSE and other global markets.
 mkdir -p %{buildroot}/opt/BreakoutScannerGlobalMarkets
 cp -r %{_sourcedir}/app/* %{buildroot}/opt/BreakoutScannerGlobalMarkets/
 mkdir -p %{buildroot}/usr/bin
-cat > %{buildroot}/usr/bin/BreakoutScannerGlobalMarkets << 'EOF'
+install -m 755 /dev/stdin %{buildroot}/usr/bin/BreakoutScannerGlobalMarkets << 'WRAPPER'
 #!/bin/bash
 exec /opt/BreakoutScannerGlobalMarkets/BreakoutScannerGlobalMarkets "$@"
-EOF
-chmod +x %{buildroot}/usr/bin/BreakoutScannerGlobalMarkets
+WRAPPER
 
 %files
 %defattr(-,root,root,-)
