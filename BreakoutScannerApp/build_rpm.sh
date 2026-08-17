@@ -33,7 +33,7 @@ cat > rpmbuild/SPECS/BreakoutScannerGlobalMarkets.spec << 'EOFSPEC'
 %define __find_provides %{nil}
 
 Name: BreakoutScannerGlobalMarkets
-Version: 2.0.1
+Version: 2.0.2
 Release: 1
 Summary: Breakout Scanner Global Markets
 License: Proprietary

@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """
-Breakout Scanner Indian Market v2.0
+Breakout Scanner Global Markets
 Developed by Yash Jani
 
-Scanning logic ported from YouTuber_Stock_Scanner_Gujarati_FINAL.ipynb,
-generalized to run against any Yahoo-Finance-covered exchange via the
-MARKETS registry below. GUI adds a splash screen, a market picker, a
-live results table, and Excel / PDF export.
+Two independent scan strategies, both ported from the notebooks in this
+project (YouTuber_Stock_Scanner_Gujarati_FINAL.ipynb /
+YouTuber_Stock_Scanner_TSX_FINAL.ipynb) and generalized to run against any
+Yahoo-Finance-covered exchange via the MARKETS registry below:
+
+- Breakout (DMA + CAR): price above the 30/50/200-day moving averages plus
+  a strengthening Cumulative Average Return.
+- RSI 5-Star: a multi-timeframe RSI pullback setup (Monthly/Weekly RSI > 60,
+  a Daily RSI pullback near 40, entry above that signal candle's high).
+
+GUI adds a splash screen, a strategy picker, a market picker, a live
+results table, and Excel / PDF export.
 """
 
 import sys
@@ -29,13 +37,18 @@ warnings.filterwarnings("ignore")
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 APP_TITLE = "Breakout Scanner Global Markets"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 AUTHOR_CREDIT = "Developed by Yash Jani"
 SPLASH_DURATION_MS = 5000
 
-DISPLAY_COLUMNS = [
+BREAKOUT_DISPLAY_COLUMNS = [
     "Date", "Stock", "CMP", "30 DMA", "50 DMA", "200 DMA",
     "200 DMA Dist %", "SL", "T1", "T2", "T3", "CAR Status", "Action",
+]
+
+RSI_DISPLAY_COLUMNS = [
+    "Date", "Stock", "CMP", "Monthly RSI", "Weekly RSI", "Signal Date",
+    "Entry", "SL", "T1 (RSI 60 Est.)", "Action",
 ]
 
 # ---------------------------------------------------------------------------
@@ -292,7 +305,143 @@ def scan_stocks(ticker_list, suffix="", progress_cb=None):
         df = pd.DataFrame(results)
         df = df.sort_values(by="200 DMA Dist %", ascending=True).reset_index(drop=True)
         return df
-    return pd.DataFrame(columns=DISPLAY_COLUMNS)
+    return pd.DataFrame(columns=BREAKOUT_DISPLAY_COLUMNS)
+
+
+# ---------------------------------------------------------------------------
+# RSI 5-Star strategy - a multi-timeframe RSI pullback setup:
+#   - Monthly RSI > 60, Weekly RSI > 60 (strong higher-timeframe momentum)
+#   - Daily RSI near 40 on a recent "signal candle" (a pullback)
+#   - Entry once price closes above that signal candle's high
+#   - Stop Loss = lowest low of the swing (10 days up to the signal candle)
+#   - Target 1 = the price where daily RSI would reach back up to 60
+#
+# "Near 40" and the signal-candle lookback aren't single exact numbers in the
+# original rules, so they're pinned down explicitly below: RSI(14) between
+# 35-45, most recent such day within the last 15 trading days. A 3-5 bar
+# trailing stop (per the strategy notes) is a trade-management choice made
+# after entry, not something a one-shot scan can compute, so it isn't
+# included as a column.
+# ---------------------------------------------------------------------------
+
+RSI_PERIOD = 14
+RSI_SIGNAL_LOW, RSI_SIGNAL_HIGH = 35, 45
+RSI_SIGNAL_LOOKBACK_DAYS = 15
+RSI_SL_LOOKBACK_DAYS = 10
+RSI_TARGET_LEVEL = 60
+
+
+def compute_rsi(price_series, period=RSI_PERIOD):
+    """Wilder's RSI. Also returns the avg gain/loss series, needed to solve
+    for the price that would put a future RSI reading at a target level."""
+    delta = price_series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+
+    rs = avg_gain / avg_loss
+    rsi_series = 100 - (100 / (1 + rs))
+    return rsi_series, avg_gain, avg_loss
+
+
+def scan_rsi_five_star(ticker_list, suffix="", progress_cb=None):
+    """RSI 5-Star multi-timeframe pullback scan. Same signature/shape as
+    scan_stocks() so the GUI can drive either strategy interchangeably."""
+    results = []
+    today_date = datetime.now().strftime("%d-%m-%Y")
+    total = len(ticker_list)
+
+    for idx, ticker in enumerate(ticker_list):
+        try:
+            data = yf.download(ticker, period="2y", interval="1d", progress=False)
+
+            if data.empty or len(data) < 220:
+                continue
+
+            close = data["Close"].squeeze()
+            high = data["High"].squeeze()
+            low = data["Low"].squeeze()
+
+            monthly_close = close.resample("ME").last().dropna()
+            weekly_close = close.resample("W").last().dropna()
+            if len(monthly_close) < RSI_PERIOD + 1 or len(weekly_close) < RSI_PERIOD + 1:
+                continue
+
+            monthly_rsi, _, _ = compute_rsi(monthly_close)
+            weekly_rsi, _, _ = compute_rsi(weekly_close)
+            daily_rsi, daily_avg_gain, daily_avg_loss = compute_rsi(close)
+
+            last_monthly_rsi = float(monthly_rsi.iloc[-1])
+            last_weekly_rsi = float(weekly_rsi.iloc[-1])
+
+            if not (last_monthly_rsi > 60 and last_weekly_rsi > 60):
+                continue
+
+            recent_rsi = daily_rsi.tail(RSI_SIGNAL_LOOKBACK_DAYS)
+            signal_mask = (recent_rsi >= RSI_SIGNAL_LOW) & (recent_rsi <= RSI_SIGNAL_HIGH)
+            if not signal_mask.any():
+                continue
+            signal_date = signal_mask[signal_mask].index[-1]
+            signal_high = float(high.loc[signal_date])
+
+            cmp = float(close.iloc[-1])
+            if cmp <= signal_high:
+                continue
+
+            swing_window = low.loc[:signal_date].tail(RSI_SL_LOOKBACK_DAYS)
+            sl = float(swing_window.min())
+            entry = signal_high
+            risk = entry - sl
+            if risk <= 0:
+                continue
+
+            last_avg_gain = float(daily_avg_gain.iloc[-1])
+            last_avg_loss = float(daily_avg_loss.iloc[-1])
+            target_rs = RSI_TARGET_LEVEL / (100 - RSI_TARGET_LEVEL)
+            price_change_needed = (RSI_PERIOD - 1) * (target_rs * last_avg_loss - last_avg_gain)
+            rsi_implied_t1 = cmp + price_change_needed
+            # The RSI-implied target can already be behind the current price
+            # (e.g. price ran up fast after the signal candle, well past
+            # where RSI would next read 60) - always take the highest of the
+            # RSI-implied level, a 2x-risk level from entry, and one more
+            # risk unit above the current price, so T1 is a genuine forward
+            # target rather than a level already passed.
+            t1 = max(rsi_implied_t1, entry + (2 * risk), cmp + risk)
+
+            results.append({
+                "Date": today_date,
+                "Stock": strip_ticker_suffix(ticker, suffix),
+                "CMP": round(cmp, 2),
+                "Monthly RSI": round(last_monthly_rsi, 1),
+                "Weekly RSI": round(last_weekly_rsi, 1),
+                "Signal Date": signal_date.strftime("%d-%m-%Y"),
+                "Entry": round(entry, 2),
+                "SL": round(sl, 2),
+                "T1 (RSI 60 Est.)": round(t1, 2),
+                "Action": "RSI 5-Star Setup",
+            })
+
+        except Exception:
+            pass
+
+        if progress_cb:
+            progress_cb(idx + 1, total)
+
+    if results:
+        df = pd.DataFrame(results)
+        df = df.sort_values(by="Weekly RSI", ascending=False).reset_index(drop=True)
+        return df
+    return pd.DataFrame(columns=RSI_DISPLAY_COLUMNS)
+
+
+STRATEGIES = {
+    "Breakout (DMA + CAR)": {"scan_fn": scan_stocks, "columns": BREAKOUT_DISPLAY_COLUMNS},
+    "RSI 5-Star": {"scan_fn": scan_rsi_five_star, "columns": RSI_DISPLAY_COLUMNS},
+}
+
+DEFAULT_STRATEGY = "Breakout (DMA + CAR)"
 
 
 def export_dataframe_to_pdf(df, filepath, title):
@@ -346,14 +495,15 @@ class ScannerThread(QThread):
     finished_ok = pyqtSignal(pd.DataFrame)
     failed = pyqtSignal(str)
 
-    def __init__(self, tickers, suffix):
+    def __init__(self, scan_fn, tickers, suffix):
         super().__init__()
+        self.scan_fn = scan_fn
         self.tickers = tickers
         self.suffix = suffix
 
     def run(self):
         try:
-            df = scan_stocks(
+            df = self.scan_fn(
                 self.tickers, self.suffix,
                 progress_cb=lambda done, total: self.progress.emit(done, total),
             )
@@ -492,9 +642,10 @@ BUTTON_STYLE = """
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.results_df = pd.DataFrame(columns=DISPLAY_COLUMNS)
+        self.results_df = pd.DataFrame(columns=BREAKOUT_DISPLAY_COLUMNS)
         self.scanner_thread = None
         self.current_market = DEFAULT_MARKET
+        self.current_strategy = DEFAULT_STRATEGY
 
         self.setWindowTitle(f"{APP_TITLE} v{APP_VERSION}")
         self.resize(1450, 820)
@@ -525,6 +676,31 @@ class MainWindow(QMainWindow):
 
         header.addStretch(1)
 
+        combo_style = """
+            QComboBox {
+                padding: 6px 10px;
+                border: 1px solid #0d7377;
+                border-radius: 5px;
+                background-color: white;
+            }
+        """
+
+        strategy_label = QLabel("Strategy:")
+        strategy_label.setStyleSheet("color: #0d3b3e; font-weight: bold;")
+        header.addWidget(strategy_label)
+
+        self.strategy_combo = QComboBox()
+        self.strategy_combo.addItems(list(STRATEGIES.keys()))
+        self.strategy_combo.setCurrentText(DEFAULT_STRATEGY)
+        self.strategy_combo.setMinimumWidth(200)
+        self.strategy_combo.setStyleSheet(combo_style)
+        self.strategy_combo.setToolTip(
+            "Breakout (DMA + CAR): price above 30/50/200-day averages with a strengthening trend.\n"
+            "RSI 5-Star: Monthly/Weekly RSI > 60, a Daily RSI pullback near 40, entry on breakout\n"
+            "above that signal candle's high."
+        )
+        header.addWidget(self.strategy_combo)
+
         market_label = QLabel("Market:")
         market_label.setStyleSheet("color: #0d3b3e; font-weight: bold;")
         header.addWidget(market_label)
@@ -532,15 +708,8 @@ class MainWindow(QMainWindow):
         self.market_combo = QComboBox()
         self.market_combo.addItems(list(MARKETS.keys()))
         self.market_combo.setCurrentText(DEFAULT_MARKET)
-        self.market_combo.setMinimumWidth(260)
-        self.market_combo.setStyleSheet("""
-            QComboBox {
-                padding: 6px 10px;
-                border: 1px solid #0d7377;
-                border-radius: 5px;
-                background-color: white;
-            }
-        """)
+        self.market_combo.setMinimumWidth(240)
+        self.market_combo.setStyleSheet(combo_style)
         header.addWidget(self.market_combo)
 
         self.scan_button = QPushButton("Scan")
@@ -576,8 +745,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.progress_bar)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(len(DISPLAY_COLUMNS))
-        self.table.setHorizontalHeaderLabels(DISPLAY_COLUMNS)
+        self.table.setColumnCount(len(BREAKOUT_DISPLAY_COLUMNS))
+        self.table.setHorizontalHeaderLabels(BREAKOUT_DISPLAY_COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -619,20 +788,26 @@ class MainWindow(QMainWindow):
             return
 
         self.current_market = self.market_combo.currentText()
+        self.current_strategy = self.strategy_combo.currentText()
         market = MARKETS[self.current_market]
+        strategy = STRATEGIES[self.current_strategy]
 
         self.market_combo.setEnabled(False)
+        self.strategy_combo.setEnabled(False)
         self.scan_button.setEnabled(False)
         self.excel_button.setEnabled(False)
         self.pdf_button.setEnabled(False)
         self.table.setRowCount(0)
+        self.table.setColumnCount(len(strategy["columns"]))
+        self.table.setHorizontalHeaderLabels(strategy["columns"])
         self.progress_bar.setValue(0)
         self.status_label.setText(
-            f"Scanning {self.current_market} ({market['currency']})... this can take a few minutes."
+            f"Scanning {self.current_market} ({market['currency']}) - {self.current_strategy}... "
+            "this can take a few minutes."
         )
         self.count_label.setText("")
 
-        self.scanner_thread = ScannerThread(market["tickers"], market["suffix"])
+        self.scanner_thread = ScannerThread(strategy["scan_fn"], market["tickers"], market["suffix"])
         self.scanner_thread.progress.connect(self.on_progress)
         self.scanner_thread.finished_ok.connect(self.on_results)
         self.scanner_thread.failed.connect(self.on_error)
@@ -644,29 +819,39 @@ class MainWindow(QMainWindow):
 
     def on_results(self, df):
         self.market_combo.setEnabled(True)
+        self.strategy_combo.setEnabled(True)
         self.scan_button.setEnabled(True)
         self.results_df = df
 
         if df.empty:
-            self.status_label.setText(f"No {self.current_market} stocks met all breakout conditions today.")
+            self.status_label.setText(
+                f"No {self.current_market} stocks matched the {self.current_strategy} setup today."
+            )
             self.count_label.setText("")
             return
 
+        columns = list(df.columns)
+        self.table.setColumnCount(len(columns))
+        self.table.setHorizontalHeaderLabels(columns)
         self.table.setRowCount(len(df))
         for row, (_, record) in enumerate(df.iterrows()):
-            for col, key in enumerate(DISPLAY_COLUMNS):
+            for col, key in enumerate(columns):
                 item = QTableWidgetItem(str(record[key]))
                 item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, col, item)
 
         currency = MARKETS[self.current_market]["currency"]
-        self.status_label.setText(f"Scan complete - {self.current_market} ({currency})")
+        status_text = f"Scan complete - {self.current_market} ({currency}) - {self.current_strategy}"
+        if self.current_strategy == "RSI 5-Star":
+            status_text += "  |  Tip: consider a 3-5 bar trailing stop once the trade is in profit"
+        self.status_label.setText(status_text)
         self.count_label.setText(f"{len(df)} stocks matched")
         self.excel_button.setEnabled(True)
         self.pdf_button.setEnabled(True)
 
     def on_error(self, message):
         self.market_combo.setEnabled(True)
+        self.strategy_combo.setEnabled(True)
         self.scan_button.setEnabled(True)
         QMessageBox.critical(self, "Scan Error", message)
 
@@ -677,7 +862,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "Run a scan before exporting.")
             return
 
-        default_name = f"Breakout_Scanner_{slugify_market(self.current_market)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        default_name = (
+            f"{slugify_market(self.current_strategy)}_{slugify_market(self.current_market)}_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
         path, _ = QFileDialog.getSaveFileName(self, "Save Excel", default_name, "Excel Files (*.xlsx)")
         if not path:
             return
@@ -692,12 +880,15 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "Run a scan before exporting.")
             return
 
-        default_name = f"Breakout_Scanner_{slugify_market(self.current_market)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        default_name = (
+            f"{slugify_market(self.current_strategy)}_{slugify_market(self.current_market)}_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        )
         path, _ = QFileDialog.getSaveFileName(self, "Save PDF", default_name, "PDF Files (*.pdf)")
         if not path:
             return
         try:
-            pdf_title = f"{APP_TITLE} - {self.current_market}"
+            pdf_title = f"{APP_TITLE} - {self.current_strategy} - {self.current_market}"
             export_dataframe_to_pdf(self.results_df, path, pdf_title)
             QMessageBox.information(self, "Saved", f"PDF file saved:\n{path}")
         except Exception as exc:
