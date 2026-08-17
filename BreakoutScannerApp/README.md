@@ -1,4 +1,4 @@
-# Breakout Scanner Global Markets — App v2.0.2
+# Breakout Scanner Global Markets — App v2.0.3
 
 GUI wrapper around the scanning logic from `YouTuber_Stock_Scanner_Gujarati_FINAL.ipynb` and
 `YouTuber_Stock_Scanner_TSX_FINAL.ipynb`, generalized to run against any market with free Yahoo
@@ -7,7 +7,7 @@ Finance data.
 ## What it does
 
 1. On launch, shows a splash screen for 5 seconds: title **"Breakout Scanner Global Markets"**,
-   **"App v2.0.2"** version tag, a rotating circular loader, and **"Developed by Yash Jani"** at
+   **"App v2.0.3"** version tag, a rotating circular loader, and **"Developed by Yash Jani"** at
    the bottom.
    The scan for the default strategy/market (Breakout / India NSE) starts in the background
    during this screen.
@@ -22,12 +22,17 @@ Finance data.
 |---|---|---|
 | Breakout (DMA + CAR) | Price above 30/50/200-day moving averages, with a strengthening Cumulative Average Return | Date, Stock, CMP, 30/50/200 DMA, 200 DMA Dist %, SL, T1, T2, T3, CAR Status, Action |
 | RSI 5-Star | Monthly RSI > 60, Weekly RSI > 60, Daily RSI pullback near 40 (the "signal candle"), entry on breakout above that candle's high | Date, Stock, CMP, Monthly RSI, Weekly RSI, Signal Date, Entry, SL, T1 (RSI 60 Est.), Action |
+| Confluence (Both) | A stock must pass the Breakout and RSI 5-Star filters at once (one data download per ticker, not two) | Date, Stock, CMP, 30/50/200 DMA, 200 DMA Dist %, Monthly RSI, Weekly RSI, Signal Date, SL, T1, T2, T3, CAR Status, Action |
 
 For RSI 5-Star: Stop Loss is the lowest low of the 10 days up to the signal candle, and T1 is
 solved from Wilder's RSI formula for the price that would put the next daily RSI reading at 60
 (never below the current price - see `scan_rsi_five_star()` in `breakout_scanner_app.py` for the
 exact fallback logic). A 3-5 bar trailing stop once in profit is a trade-management choice, not
 something a one-shot scan computes, so it's surfaced as a status-bar tip rather than a column.
+
+For Confluence: Stop Loss is whichever of the two strategies' stop levels is tighter (closer to
+the current price), and T1/T2/T3 reuse the Breakout strategy's risk-multiple convention off that
+combined stop, so the numbers stay simple to read even though two independent setups agree here.
 
 ### Markets included (16, all free via Yahoo Finance)
 

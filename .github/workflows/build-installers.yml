@@ -116,7 +116,7 @@ jobs:
       
       - name: Delete existing release if it exists
         run: |
-          TAG="v2.0.2"
+          TAG="v2.0.3"
           # Try to delete the release
           gh release delete "$TAG" --yes 2>/dev/null || true
           # Try to delete the tag
@@ -128,10 +128,15 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: release/*
-          tag_name: v2.0.2
-          name: Release v2.0.2
+          tag_name: v2.0.3
+          name: Release v2.0.3
           body: |
             Professional stock breakout scanner with global market support.
+
+            **New in v2.0.3:** a third strategy option, Confluence (Both) - only stocks
+            that pass both Breakout (DMA + CAR) and RSI 5-Star at once - plus a cleaned-up
+            two-row header layout that fixed clipped/overlapping controls on smaller
+            windows.
 
             **New in v2.0.2:** a second scan strategy - RSI 5-Star (multi-timeframe RSI
             pullback setup: Monthly/Weekly RSI > 60, Daily RSI pullback near 40, entry on

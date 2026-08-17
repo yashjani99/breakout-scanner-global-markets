@@ -23,7 +23,7 @@ from cx_Freeze import setup, Executable
 
 APP_NAME = "BreakoutScannerGlobalMarkets"
 APP_TITLE = "Breakout Scanner Global Markets"
-VERSION = "2.0.2"
+VERSION = "2.0.3"
 AUTHOR = "Yash Jani"
 DESCRIPTION = "Breakout Scanner Global Markets - multi-market NSE/TSX/NYSE/LSE/... breakout scanner"
 

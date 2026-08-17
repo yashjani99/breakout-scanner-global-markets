@@ -37,7 +37,7 @@ warnings.filterwarnings("ignore")
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 APP_TITLE = "Breakout Scanner Global Markets"
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.3"
 AUTHOR_CREDIT = "Developed by Yash Jani"
 SPLASH_DURATION_MS = 5000
 
@@ -49,6 +49,12 @@ BREAKOUT_DISPLAY_COLUMNS = [
 RSI_DISPLAY_COLUMNS = [
     "Date", "Stock", "CMP", "Monthly RSI", "Weekly RSI", "Signal Date",
     "Entry", "SL", "T1 (RSI 60 Est.)", "Action",
+]
+
+CONFLUENCE_DISPLAY_COLUMNS = [
+    "Date", "Stock", "CMP", "30 DMA", "50 DMA", "200 DMA", "200 DMA Dist %",
+    "Monthly RSI", "Weekly RSI", "Signal Date", "SL", "T1", "T2", "T3",
+    "CAR Status", "Action",
 ]
 
 # ---------------------------------------------------------------------------
@@ -436,9 +442,123 @@ def scan_rsi_five_star(ticker_list, suffix="", progress_cb=None):
     return pd.DataFrame(columns=RSI_DISPLAY_COLUMNS)
 
 
+def scan_confluence(ticker_list, suffix="", progress_cb=None):
+    """Stocks that pass BOTH the Breakout (DMA + CAR) and RSI 5-Star filters
+    at once, checked from a single data download per ticker (not two).
+
+    Stop loss uses whichever of the two strategies' stop levels is tighter
+    (closer to the current price), and T1/T2/T3 are risk multiples off that
+    combined stop - the same convention as the plain Breakout strategy, so
+    the numbers stay simple to read even though two setups agree here."""
+    results = []
+    today_date = datetime.now().strftime("%d-%m-%Y")
+    total = len(ticker_list)
+
+    for idx, ticker in enumerate(ticker_list):
+        try:
+            data = yf.download(ticker, period="2y", interval="1d", progress=False)
+
+            if data.empty or len(data) < 220:
+                continue
+
+            close = data["Close"].squeeze()
+            high = data["High"].squeeze()
+            low = data["Low"].squeeze()
+            cmp = float(close.iloc[-1])
+
+            # --- Breakout (DMA + CAR) conditions ---
+            dma_30 = float(close.rolling(window=30).mean().iloc[-1])
+            dma_50 = float(close.rolling(window=50).mean().iloc[-1])
+            dma_200 = float(close.rolling(window=200).mean().iloc[-1])
+            dist_200_dma = ((cmp - dma_200) / dma_200) * 100
+
+            last_1y_data = data.tail(252)
+            high_date = last_1y_data["High"].squeeze().idxmax()
+            car_data = close.loc[high_date:]
+            if len(car_data) < 10:
+                continue
+            car_status = (
+                "Positive" if car_data.expanding().mean().tail(10).is_monotonic_increasing else "Negative"
+            )
+
+            if not ((cmp > dma_30) and (cmp > dma_50) and (cmp > dma_200) and (car_status == "Positive")):
+                continue
+
+            breakout_sl = float(data["Low"].tail(10).min().item())
+
+            # --- RSI 5-Star conditions (reusing the same downloaded data) ---
+            monthly_close = close.resample("ME").last().dropna()
+            weekly_close = close.resample("W").last().dropna()
+            if len(monthly_close) < RSI_PERIOD + 1 or len(weekly_close) < RSI_PERIOD + 1:
+                continue
+
+            monthly_rsi, _, _ = compute_rsi(monthly_close)
+            weekly_rsi, _, _ = compute_rsi(weekly_close)
+            daily_rsi, _, _ = compute_rsi(close)
+
+            last_monthly_rsi = float(monthly_rsi.iloc[-1])
+            last_weekly_rsi = float(weekly_rsi.iloc[-1])
+            if not (last_monthly_rsi > 60 and last_weekly_rsi > 60):
+                continue
+
+            recent_rsi = daily_rsi.tail(RSI_SIGNAL_LOOKBACK_DAYS)
+            signal_mask = (recent_rsi >= RSI_SIGNAL_LOW) & (recent_rsi <= RSI_SIGNAL_HIGH)
+            if not signal_mask.any():
+                continue
+            signal_date = signal_mask[signal_mask].index[-1]
+            signal_high = float(high.loc[signal_date])
+            if cmp <= signal_high:
+                continue
+
+            rsi_sl = float(low.loc[:signal_date].tail(RSI_SL_LOOKBACK_DAYS).min())
+
+            # --- Both passed: combine into one set of trade levels ---
+            sl = max(breakout_sl, rsi_sl)
+            entry = cmp
+            risk = entry - sl
+            if risk <= 0:
+                continue
+
+            t1 = entry + (2 * risk)
+            t2 = entry + (3 * risk)
+            t3 = entry + (5 * risk)
+
+            results.append({
+                "Date": today_date,
+                "Stock": strip_ticker_suffix(ticker, suffix),
+                "CMP": round(cmp, 2),
+                "30 DMA": round(dma_30, 2),
+                "50 DMA": round(dma_50, 2),
+                "200 DMA": round(dma_200, 2),
+                "200 DMA Dist %": round(dist_200_dma, 2),
+                "Monthly RSI": round(last_monthly_rsi, 1),
+                "Weekly RSI": round(last_weekly_rsi, 1),
+                "Signal Date": signal_date.strftime("%d-%m-%Y"),
+                "SL": round(sl, 2),
+                "T1": round(t1, 2),
+                "T2": round(t2, 2),
+                "T3": round(t3, 2),
+                "CAR Status": car_status,
+                "Action": "Breakout + RSI 5-Star",
+            })
+
+        except Exception:
+            pass
+
+        if progress_cb:
+            progress_cb(idx + 1, total)
+
+    if results:
+        df = pd.DataFrame(results)
+        df = df.sort_values(by="Weekly RSI", ascending=False).reset_index(drop=True)
+        return df
+    return pd.DataFrame(columns=CONFLUENCE_DISPLAY_COLUMNS)
+
+
 STRATEGIES = {
     "Breakout (DMA + CAR)": {"scan_fn": scan_stocks, "columns": BREAKOUT_DISPLAY_COLUMNS},
     "RSI 5-Star": {"scan_fn": scan_rsi_five_star, "columns": RSI_DISPLAY_COLUMNS},
+    "Confluence (Both)": {"scan_fn": scan_confluence, "columns": CONFLUENCE_DISPLAY_COLUMNS},
 }
 
 DEFAULT_STRATEGY = "Breakout (DMA + CAR)"
@@ -628,8 +748,8 @@ BUTTON_STYLE = """
         background-color: {bg};
         color: white;
         border: none;
-        padding: 9px 18px;
-        font-size: 11pt;
+        padding: 8px 12px;
+        font-size: 10pt;
         font-weight: bold;
         border-radius: 5px;
     }}
@@ -648,7 +768,7 @@ class MainWindow(QMainWindow):
         self.current_strategy = DEFAULT_STRATEGY
 
         self.setWindowTitle(f"{APP_TITLE} v{APP_VERSION}")
-        self.resize(1450, 820)
+        self.resize(1280, 780)
         self.setStyleSheet("QMainWindow { background-color: #f7f9f9; }")
         self._build_ui()
 
@@ -662,74 +782,82 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(20, 18, 20, 18)
         layout.setSpacing(12)
 
-        header = QHBoxLayout()
-        header.setSpacing(12)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(12)
 
         title_label = QLabel(APP_TITLE)
         title_label.setFont(QFont("Segoe UI", 17, QFont.Bold))
         title_label.setStyleSheet("color: #0d3b3e;")
-        header.addWidget(title_label)
+        title_row.addWidget(title_label)
 
         version_tag = QLabel(f"App v{APP_VERSION}")
         version_tag.setStyleSheet("color: #0d7377; font-weight: bold;")
-        header.addWidget(version_tag)
+        title_row.addWidget(version_tag)
 
-        header.addStretch(1)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
+
+        controls_row = QHBoxLayout()
+        controls_row.setSpacing(8)
 
         combo_style = """
             QComboBox {
-                padding: 6px 10px;
+                padding: 6px 8px;
                 border: 1px solid #0d7377;
                 border-radius: 5px;
                 background-color: white;
+                font-size: 10pt;
             }
         """
 
         strategy_label = QLabel("Strategy:")
         strategy_label.setStyleSheet("color: #0d3b3e; font-weight: bold;")
-        header.addWidget(strategy_label)
+        controls_row.addWidget(strategy_label)
 
         self.strategy_combo = QComboBox()
         self.strategy_combo.addItems(list(STRATEGIES.keys()))
         self.strategy_combo.setCurrentText(DEFAULT_STRATEGY)
-        self.strategy_combo.setMinimumWidth(200)
+        self.strategy_combo.setFixedWidth(180)
         self.strategy_combo.setStyleSheet(combo_style)
         self.strategy_combo.setToolTip(
             "Breakout (DMA + CAR): price above 30/50/200-day averages with a strengthening trend.\n"
             "RSI 5-Star: Monthly/Weekly RSI > 60, a Daily RSI pullback near 40, entry on breakout\n"
-            "above that signal candle's high."
+            "above that signal candle's high.\n"
+            "Confluence (Both): only stocks that pass both strategies at once."
         )
-        header.addWidget(self.strategy_combo)
+        controls_row.addWidget(self.strategy_combo)
 
         market_label = QLabel("Market:")
         market_label.setStyleSheet("color: #0d3b3e; font-weight: bold;")
-        header.addWidget(market_label)
+        controls_row.addWidget(market_label)
 
         self.market_combo = QComboBox()
         self.market_combo.addItems(list(MARKETS.keys()))
         self.market_combo.setCurrentText(DEFAULT_MARKET)
-        self.market_combo.setMinimumWidth(240)
+        self.market_combo.setFixedWidth(220)
         self.market_combo.setStyleSheet(combo_style)
-        header.addWidget(self.market_combo)
+        controls_row.addWidget(self.market_combo)
+
+        controls_row.addStretch(1)
 
         self.scan_button = QPushButton("Scan")
         self.scan_button.setStyleSheet(BUTTON_STYLE.format(bg="#3b3b3b", hover="#525252", pressed="#242424"))
         self.scan_button.clicked.connect(self.start_scan)
-        header.addWidget(self.scan_button)
+        controls_row.addWidget(self.scan_button)
 
         self.excel_button = QPushButton("Generate Excel")
         self.excel_button.setStyleSheet(BUTTON_STYLE.format(bg="#2d6a4f", hover="#40916c", pressed="#1b4332"))
         self.excel_button.setEnabled(False)
         self.excel_button.clicked.connect(self.export_excel)
-        header.addWidget(self.excel_button)
+        controls_row.addWidget(self.excel_button)
 
         self.pdf_button = QPushButton("Generate PDF")
         self.pdf_button.setStyleSheet(BUTTON_STYLE.format(bg="#0d7377", hover="#14919b", pressed="#0a5a61"))
         self.pdf_button.setEnabled(False)
         self.pdf_button.clicked.connect(self.export_pdf)
-        header.addWidget(self.pdf_button)
+        controls_row.addWidget(self.pdf_button)
 
-        layout.addLayout(header)
+        layout.addLayout(controls_row)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet("""
