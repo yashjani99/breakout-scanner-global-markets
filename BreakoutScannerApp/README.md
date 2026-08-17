@@ -1,4 +1,4 @@
-# Breakout Scanner Global Markets — App v2.0.3
+# Breakout Scanner Global Markets — App v2.0.4
 
 GUI wrapper around the scanning logic from `YouTuber_Stock_Scanner_Gujarati_FINAL.ipynb` and
 `YouTuber_Stock_Scanner_TSX_FINAL.ipynb`, generalized to run against any market with free Yahoo
@@ -7,7 +7,7 @@ Finance data.
 ## What it does
 
 1. On launch, shows a splash screen for 5 seconds: title **"Breakout Scanner Global Markets"**,
-   **"App v2.0.3"** version tag, a rotating circular loader, and **"Developed by Yash Jani"** at
+   **"App v2.0.4"** version tag, a rotating circular loader, and **"Developed by Yash Jani"** at
    the bottom.
    The scan for the default strategy/market (Breakout / India NSE) starts in the background
    during this screen.
@@ -65,7 +65,9 @@ logic, table, and exports all work off that registry automatically.
 | File | Purpose |
 |---|---|
 | `breakout_scanner_app.py` | The application (PyQt5) |
-| `requirements.txt` | Runtime dependencies |
+| `scanner_core.py` | The scanning logic itself (markets, strategies, no GUI dependency) - imported by the app, and clonable standalone by headless callers like the website's daily scan job |
+| `requirements.txt` | Runtime dependencies (GUI app) |
+| `requirements-headless.txt` | Minimal deps for `scanner_core.py` alone (no PyQt5/reportlab/openpyxl) |
 | `setup_freeze.py` | Unified `cx_Freeze` script — MSI (Windows), RPM (Linux), DMG (macOS) |
 | `build_installer.bat` | Windows: installs deps, builds standalone EXE + MSI |
 | `build_rpm.sh` | Linux (Fedora/RHEL/openSUSE, needs `rpmbuild`): builds `.rpm` |

@@ -1,0 +1,6 @@
+# Minimal deps for scanner_core.py with no GUI - used by the website's
+# scheduled scan workflow, which clones this repo and imports scanner_core
+# directly. Deliberately excludes PyQt5/reportlab/openpyxl (GUI + export
+# deps that only breakout_scanner_app.py needs) to keep CI installs fast.
+yfinance>=0.2.40
+pandas>=2.0

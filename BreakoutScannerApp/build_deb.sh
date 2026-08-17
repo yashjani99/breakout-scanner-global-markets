@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 
 APP_NAME="breakout-scanner-indian-market"
 APP_TITLE="Breakout Scanner Global Markets"
-VERSION="2.0.3"
+VERSION="2.0.4"
 MAINTAINER="Yash Jani"
 ARCH="amd64"
 
